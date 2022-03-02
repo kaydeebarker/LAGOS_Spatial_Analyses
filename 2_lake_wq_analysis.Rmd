@@ -1,14 +1,14 @@
 ---
 title: "Lake Water Quality Analysis"
-author: "Matthew Ross"
-date: "9/17/2019"
+author: "Kaydee Barker"
+date: "2/21/2022"
 output: html_document
 ---
 
 
 
 ```{r setup, include=FALSE}
-library(tidyverse) # Tidy packages
+library(tidyverse) # Tidy package/s
 library(sf) #Spatial package that can read and create shapefiles 
 library(mapview) #Interactive maps
 library(LAGOSNE) #Lots and lots of clean lake data
@@ -48,10 +48,9 @@ nutr <- lagos$epi_nutr
 
 ### Subset columns nutr to only keep key info that we want
 
-
 ```{r}
 clarity_only <- nutr %>%
-  select(lagoslakeid,sampledate,chla,doc,secchi) %>%
+  dplyr::select(lagoslakeid,sampledate,chla,doc,secchi) %>%
   mutate(sampledate = as.character(sampledate) %>% ymd(.))
 
 ```
@@ -89,15 +88,14 @@ spatial_200 <- inner_join(spatial_lakes,chla_secchi_200 %>%
                             distinct(lagoslakeid,.keep_all=T),
                           by='lagoslakeid')
 
-
 ```
 
-### Mean Chl_a map
+### Mean Chlorophyll A map
 
 ```{r}
 ### Take the mean chl_a and secchi by lake
 
-mean_values_200 <- chla_secchi_200 %>%
+means_200 <- chla_secchi_200 %>%
   # Take summary by lake id
   group_by(lagoslakeid) %>%
   # take mean chl_a per lake id
@@ -110,62 +108,103 @@ mean_values_200 <- chla_secchi_200 %>%
   mutate(log10_mean_chl = log10(mean_chl))
 
 #Join datasets
-mean_spatial <- inner_join(spatial_lakes,mean_values_200,
+mean_spatial <- inner_join(spatial_lakes,means_200,
                           by='lagoslakeid') 
 
 #Make a map
-mapview(mean_spatial,zcol='log10_mean_chl')
+mapview(mean_spatial, zcol='log10_mean_chl', layer.name = "Mean Chlorophyll A Content")
 ```
+
+**Figure 1.** Mean chlorophyl content at sites with at least 200 observations.
 
 
 # Class work
 
-## 1) What is the correlation between Secchi Disk Depth and Chlorophyll a for
-sites with at least 200 observations?
-
-- Here, I just want a plot of chla vs secchi for all sites 
+## 1) What is the correlation between Secchi Disk Depth and Chlorophyll a for sites with at least 200 observations?
 
 ```{r}
-#Your code here
+ggplot(means_200) +
+  geom_point(aes(mean_secchi, mean_chl)) +
+  ggthemes::theme_few() + 
+  xlab("Mean Secchi Disk Depth") + ylab("Mean Chlorophyll Content")
 
 ```
 
 
-## Why might this be the case? 
+**Figure 2.** Chlorophyll content has a negative correlation with Secchi disk depth at sites with at least 200 observations.
+
+
+### Why might this be the case? 
+
+Secchi disks measure water clarity; the deeper the disk, the clearer the water (1). Chlorophyll content in lakes is generally a reliable marker of algae content, so that high chlorophyll values indicate high algal biomass and corresponding low water clarity (2). Additionally, chlorophyll may be used as a proxy for water quality, since high algal biomass is associated with high nutrient pollution in the process of eutrophication (2). High pollution may further decrease water clarity, so that the relationship between chlorophyll and Secchi disk depth may be expected.
+
+1. “The Secchi Dip-in - What Is a Secchi Disk?” North American Lake Management Society (NALMS),
+https://www.nalms.org/secchidipin/monitoring-methods/the-secchi-disk/what-is-a-secchi-disk/. 
+
+2. Filazzola, A., Mahdiyan, O., Shuvo, A. et al. A database of chlorophyll and water chemistry in freshwater lakes. Sci Data 7, 310 (2020).
+https://doi-org.ezproxy2.library.colostate.edu/10.1038/s41597-020-00648-2
 
 
 ## 2) What states have the most data? 
 
-### 2a) First you will need to make a lagos spatial dataset that has the total 
-number of counts per site.
+### 2a) Make a lagos spatial dataset that has the total number of counts per site.
 
 ```{r}
 
-## Your code here
-```
+site_counts <- chla_secchi %>%
+  group_by(lagoslakeid) %>%
+  mutate(count = n())
 
+lake_counts <- inner_join(site_counts, lake_centers, by= "lagoslakeid")%>% 
+  dplyr::select(lagoslakeid,nhd_long,nhd_lat, count, secchi, chla)
 
-### 2b) Second, you will need to join this point dataset to the us_boundaries 
-data. 
-
-```{r}
-## Your code here
-```
-
-
-### 2c) Then you will want to group by state and sum all the observations in that
-state and arrange that data from most to least toatl observations per state. 
-
-```{r}
-## Your code here. 
-```
-
-##3 Is there a spatial pattern in Secchi disk depth for lakes with at least 200 
-observations?
-
-```{r}
-## Your code here
+spatial_counts <- st_as_sf(lake_counts,coords=c("nhd_long","nhd_lat"),
+                          crs=4326)
 
 ```
 
 
+### 2b) Join this point dataset to the us_boundaries data. 
+
+```{r}
+
+states <- us_states()
+
+states_counts <- st_join(spatial_counts, states)
+
+```
+
+
+### 2c) Group by state and sum all the observations in that state and arrange that data from most to least total observations per state. 
+
+```{r}
+
+sum_statecount <- states_counts %>%
+  group_by(state_name) %>%
+  summarize(sum = sum(count)) %>%
+  arrange(desc(sum)) 
+
+sumtable <- tibble(sum_statecount)
+
+view(sumtable)
+
+#ggplot(data = sumtable, aes(x=state_name, y=sum, fill=state_name)) + 
+#  geom_bar(stat = "identity", width = 0.3, position = "dodge") + 
+#  ggthemes::theme_few() +
+#  xlab("State") + ylab(expression(paste("# of Observations"))) 
+
+
+```
+
+Minnesota has the most observations. Vermont, has the next most observations, but less than half of Minnesota's observations. South Dakota has the least number of observations in the dataset.
+
+
+
+##3 Is there a spatial pattern in Secchi disk depth for lakes with at least 200 observations?
+
+```{r}
+mapview(mean_spatial, zcol='mean_secchi', layer.name = "Mean Secchi Disk Depth")
+
+```
+
+**Figure 3.** Map showing mean Secchi disk depths of sites with at least 200 observations.
